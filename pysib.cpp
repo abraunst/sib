@@ -3,55 +3,31 @@
 
 
 #include <pybind11/pybind11.h>
+#include <pybind11/stl_bind.h>
 #include <pybind11/stl.h>
+#include <pybind11/numpy.h>
 #include <string>
 #include <sstream>
 #include <numeric>
+#include <boost/lexical_cast.hpp>
 #include <iterator>
 #include <exception>
 #include "bp.h"
 
-#include <pybind11/stl_bind.h>
 
 PYBIND11_MAKE_OPAQUE(std::vector<real_t>);
 PYBIND11_MAKE_OPAQUE(std::vector<int>);
 PYBIND11_MAKE_OPAQUE(std::vector<Node>);
+//PYBIND11_MAKE_OPAQUE(std::vector<tuple<real_t, real_t, real_t>>);
 
 
 namespace py = pybind11;
 
 using namespace std;
+using boost::lexical_cast;
 
 
-string show_params(Params const & p)
-{
-    return "sib.Params(k=" + to_string(p.k) +
-        ",mu=" + to_string(p.mu) +
-        ",pseed=" + to_string(p.pseed) +
-        ",psus=" + to_string(p.psus)+")";
-}
-
-string show_fg(FactorGraph const & f)
-{
-	int nasym = 0;
-	int nedge = 0;
-	int ncont = 0;
-	for(auto nit = f.nodes.begin(); nit != f.nodes.end(); ++nit) {
-		for (auto vit = nit->neighs.begin(); vit != nit->neighs.end(); ++vit) {
-                        if (vit->index < nit->index)
-                                continue;
-			++nedge;
-			ncont += vit->lambdas.size() - 1;
-			if (vit->lambdas != f.nodes[vit->index].neighs[vit->pos].lambdas)
-				++nasym;
-		}
-	}
-
-	return "sib.FactorGraph\n"
-                  "            nodes: " + to_string(f.nodes.size()) + "\n"
-		+ "            edges: " + to_string(nedge) + " (" + to_string(nasym) + " assymetric)\n"
-		+ "    time contacts: " + to_string(ncont);
-}
+template<class T> string print(const T & t) { return lexical_cast<string>(t); }
 
 map<int, vector<int> >
 get_times(FactorGraph const & f) {
@@ -76,9 +52,15 @@ get_marginal(Node const & n)
         }
         auto marg = vector<tuple<real_t, real_t, real_t>>(T-1);
         for (int t = 1; t < T; ++t)
-            marg[t-1] = make_tuple(rbt[t], lbg[t-1], 1-rbt[t]-lbg[t-1]);
+            marg[t-1] = make_tuple(rbt[t], 1-rbt[t]-lbg[t-1], lbg[t-1]);
         return marg;
 }
+
+tuple<real_t, real_t, real_t> get_marginal_t(Node const & n, int t)
+{
+        return get_marginal(n)[t];
+}
+
 
 int get_index(FactorGraph & f, int i)
 {
@@ -93,26 +75,29 @@ PYBIND11_MODULE(_sib, m) {
     py::bind_vector<std::vector<real_t>>(m, "VectorReal");
     py::bind_vector<std::vector<int>>(m, "VectorInt");
     py::bind_vector<std::vector<Node>>(m, "VectorNode");
+    //py::bind_vector<std::vector<tuple<real_t, real_t, real_t>>(m, "VectorTuple");
+
 
     py::class_<FactorGraph>(m, "FactorGraph")
         .def(py::init<Params const &,
                 vector<tuple<int,int,int,real_t>>,
                 vector<tuple<int,int,int>>,
-                vector<tuple<int,real_t,real_t>> >(),
+                vector<tuple<int,Pi,Pr>> >(),
                 py::arg("params"),
                 py::arg("contacts"),
                 py::arg("observations"),
-                py::arg("individuals") = vector<tuple<int,real_t,real_t>>())
+                py::arg("individuals") = vector<tuple<int,Pi,Pr>>())
         .def("update", &FactorGraph::iteration)
         .def("loglikelihood", &FactorGraph::loglikelihood)
         .def("reset", &FactorGraph::init)
         .def("get_index", &get_index)
-        .def("__repr__", &show_fg)
-        .def_readwrite("nodes", &FactorGraph::nodes)
+        .def("__repr__", &print<FactorGraph>)
+        .def_readonly("nodes", &FactorGraph::nodes)
         .def_readonly("params", &FactorGraph::params);
 
     py::class_<Node>(m, "Node")
         .def("marginal", &get_marginal)
+        .def("marginal_t", &get_marginal_t)
         .def_readwrite("ht", &Node::ht)
         .def_readwrite("hg", &Node::hg)
         .def_readonly("bt", &Node::bt)
@@ -120,17 +105,33 @@ PYBIND11_MODULE(_sib, m) {
         .def_readonly("times", &Node::times)
         .def_readonly("index", &Node::index);
 
+    py::class_<Uniform>(m, "Uniform")
+        .def(py::init<real_t>(), py::arg("p") = 1.0)
+        .def_readwrite("p", &Uniform::p)
+        .def("__repr__", &print<Uniform>);
+
+    py::class_<Exponential>(m, "Exponential")
+        .def(py::init<real_t>(), py::arg("mu") = 0.1)
+        .def_readwrite("mu", &Exponential::mu)
+        .def("__repr__", &print<Exponential>);
+
+    py::class_<Gamma>(m, "Gamma")
+        .def(py::init<real_t, real_t>(), py::arg("k") = 1.0, py::arg("mu") = 0.1)
+        .def_readwrite("k", &Gamma::k)
+        .def_readwrite("mu", &Gamma::mu)
+        .def("__repr__", &print<Gamma>);
+
     py::class_<Params>(m, "Params")
-        .def(py::init<real_t, real_t, real_t, real_t>(),
-                "Params class. mu and k parameters are defaults.",
-                py::arg("k") = 1.0,
-                py::arg("mu") = 0.01,
+        .def(py::init<Pi, Pr, real_t, real_t>(),
+                "Params class. prob_i and prob_r parameters are defaults.",
+                py::arg("prob_i") = Pi(1.0),
+                py::arg("prob_r") = Pr(1.0, 0.1),
                 py::arg("pseed") = 0.01,
-                py::arg("psus") = 1.0)
-        .def_readwrite("k", &Params::k)
-        .def_readwrite("mu", &Params::mu)
+                py::arg("psus") = 0.5)
+        .def_readwrite("prob_r", &Params::prob_r)
+        .def_readwrite("prob_i", &Params::prob_i)
         .def_readwrite("pseed", &Params::pseed)
         .def_readwrite("psus", &Params::psus)
-        .def("__repr__", &show_params);
+        .def("__repr__", &print<Params>);
     m.def("set_num_threads", &omp_set_num_threads);
 }
