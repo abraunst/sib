@@ -113,6 +113,153 @@ public:
 	enum ARRAY_ENUM { DO_NOT_OVERWRITE = -1 };
 };
 
+
+template<class TMes>
+void FactorGraph<TMes>::append_contact(int i, int j, times_t t, real_t lambdaij, real_t lambdaji)
+{
+	if (i == j)
+		throw std::invalid_argument("self loops are not allowed");
+        add_node(i);
+        add_node(j);
+	Node & fi = nodes[i];
+	Node & fj = nodes[j];
+	int qi = fi.times.size();
+	int qj = fj.times.size();
+	if (fi.times[qi - 2] > t || fj.times[qj - 2] > t)
+		throw std::invalid_argument("time of contacts should be ordered");
+
+	int ki = find_neighbor(i, j);
+	int kj = find_neighbor(j, i);
+
+	if (ki == int(fi.neighs.size())) {
+		assert(kj == int(fj.neighs.size()));
+		fi.neighs.push_back(Neigh(j, kj));
+		fj.neighs.push_back(Neigh(i, ki));
+	}
+
+	Neigh & ni = fi.neighs[ki];
+	Neigh & nj = fj.neighs[kj];
+	if (fi.times[qi - 2] < t) {
+		fi.push_back_time(t);
+                ++qi;
+	}
+	if (fj.times[qj - 2] < t) {
+		fj.push_back_time(t);
+                ++qj;
+	}
+	if (ni.t.size() < 2 || ni.t[ni.t.size() - 2] < qi - 2) {
+		ni.t.back() = qi - 2;
+		nj.t.back() = qj - 2;
+		ni.t.push_back(qi - 1);
+		nj.t.push_back(qj - 1);
+		if (lambdaij != DO_NOT_OVERWRITE)
+			ni.lambdas.back() = lambdaij;
+		if (lambdaji != DO_NOT_OVERWRITE)
+			nj.lambdas.back() = lambdaji;
+                ni.lambdas.push_back(0.0);
+                nj.lambdas.push_back(0.0);
+		++ni.msg;
+		++nj.msg;
+	} else if (ni.t[ni.t.size() - 2] == qi - 2) {
+		if (lambdaij != DO_NOT_OVERWRITE)
+			ni.lambdas[ni.t.size() - 2] = lambdaij;
+		if (lambdaji != DO_NOT_OVERWRITE)
+			nj.lambdas[nj.t.size() - 2] = lambdaji;
+	} else {
+		throw std::invalid_argument("time of contacts should be ordered");
+	}
+        // adjust infinite times
+        for (int k = 0; k < int(fi.neighs.size()); ++k) {
+                fi.neighs[k].t.back() = qi - 1;
+	}
+        for (int k = 0; k < int(fj.neighs.size()); ++k) {
+                fj.neighs[k].t.back() = qj - 1;
+	}
+}
+
+
+template<class TMes>
+FactorGraph<TMes>::FactorGraph(Params const & params,
+		std::vector<std::tuple<int, int, times_t, real_t> > const & contacts,
+		std::vector<std::tuple<int, int, times_t> > const & obs,
+		std::vector<std::tuple<int, std::shared_ptr<Proba>, std::shared_ptr<Proba>, std::shared_ptr<Proba>, std::shared_ptr<Proba>>> const & individuals) :
+	params(params)
+{
+	for (auto it = individuals.begin(); it != individuals.end(); ++it) {
+		if (!std::get<1>(*it) || !std::get<1>(*it) || !std::get<1>(*it)|| !std::get<1>(*it))
+			throw std::invalid_argument("invalid individual definition");
+		add_node(std::get<0>(*it));
+		Node & n = nodes[std::get<0>(*it)];
+		n.prob_i = std::get<1>(*it);
+		n.prob_r = std::get<2>(*it);
+		n.prob_i0 = std::get<3>(*it);
+		n.prob_r0 = std::get<4>(*it);
+		n.df_i = RealParams(n.prob_i->theta.size());
+		n.df_r = RealParams(n.prob_r->theta.size());
+	}
+	auto ic = contacts.begin(), ec = contacts.end();
+	auto io = obs.begin(), eo = obs.end();
+	while (ic != ec || io != eo) {
+		int tc = ic == ec ? Tinf : std::get<2>(*ic);
+		int to = io == eo ? Tinf : std::get<2>(*io);
+		if (tc < to) {
+			// cerr << "appending contact" << get<0>(*ic) << " " <<  get<1>(*ic)<< " " <<  get<2>(*ic) << " " <<  get<3>(*ic) << endl;
+			append_contact(std::get<0>(*ic), std::get<1>(*ic), std::get<2>(*ic), std::get<3>(*ic));
+			ic++;
+		} else {
+			// cerr << "appending obs" << get<0>(*io) << " " <<  get<1>(*io)<< " " <<  get<2>(*io)  << endl;
+			append_time(std::get<0>(*io), std::get<2>(*io));
+			io++;
+		}
+	}
+	reset_observations(obs);
+}
+
+template<class TMes>
+int FactorGraph<TMes>::find_neighbor(int i, int j) const
+{
+	int k = 0;
+	for (; k < int(nodes[i].neighs.size()); ++k)
+		if (j == nodes[i].neighs[k].index)
+			break;
+	return k;
+}
+
+template<class TMes>
+void norm_msg(TMes & msg)
+{
+	real_t S = 0;
+	for(int n = 0; n < int(msg.size()); ++n)
+		S += msg[n];
+	if (!(S > 0))
+		throw std::domain_error("singularity error");
+	for(int n = 0; n < int(msg.size()); ++n)
+		msg[n] /= S;
+}
+
+template<class TMes>
+real_t setmes(TMes & from, TMes & to, real_t damp)
+{
+	int n = from.size();
+	real_t s = 0;
+	for (int i = 0; i < n; ++i) {
+		s += from[i];
+	}
+	real_t err = 0;
+	for (int i = 0; i < n; ++i) {
+		if (!(s > 0)){
+			from[i] = 1./n;
+			err = std::numeric_limits<real_t>::infinity();
+		} else {
+			from[i] /= s;
+			err = std::max(err, std::abs(from[i] - to[i]));
+		}
+		to[i] = damp*to[i] + (1-damp)*from[i];
+	}
+	return err;
+}
+
+
 template<class TMes>
 std::ostream & operator<<(std::ostream & ost, FactorGraph<TMes> const & f)
 {
