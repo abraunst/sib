@@ -121,7 +121,7 @@ int main(int argc, char ** argv)
 	auto prob_r = shared_ptr<Proba>(new Exponential(mu));
 	Params p(prob_i, prob_r, pseed, 0.5, 0.0, 0.0, 0.0, 0.0);
 	auto co = read_files(cont_file, obs_file);
-	FactorGraph factor(p, get<0>(co), get<1>(co));
+	BPGraph factor(p, get<0>(co), get<1>(co));
 	factor.iterate(maxit, tol, 0.0);
 	factor.show_beliefs(cout);
 	return 0;

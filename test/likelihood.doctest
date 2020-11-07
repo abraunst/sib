@@ -11,7 +11,7 @@
 ####### Build a factor graph with no contacts
 >>> f = sib.FactorGraph(observations=sum(observations_list, []), params=params)
 >>> f
-FactorGraph
+BPGraph
             nodes: 101
             edges: 0 (0 asymmetric)
     time contacts: 0
@@ -23,7 +23,7 @@ FactorGraph
 >>> contacts = [(t,t+1,t,0.5) for t in range(T)];
 >>> f = sib.FactorGraph(contacts=contacts, observations=sum(observations_list, []), params=params)
 >>> f
-FactorGraph
+BPGraph
             nodes: 101
             edges: 100 (100 asymmetric)
     time contacts: 100

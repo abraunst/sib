@@ -20,8 +20,8 @@ sib: bp.o params.o sib.cpp ${DEP}
 	${CXX} ${CFLAGS} ${EXTRA} params.o bp.o sib.cpp ${LINK} -o $@
 drop.o: drop.cpp ${DEP}
 	${CXX} ${CFLAGS} ${EXTRA} -c drop.cpp -o $@
-${SO}: bp.o params.o drop.o pysib.cpp ${DEP}
-	${CXX}  -shared ${CFLAGS} ${PYINC} ${LINK} ${EXTRA} params.o bp.o drop.o pysib.cpp -o $@
+${SO}: bp.o params.o pysib.cpp ${DEP}
+	${CXX}  -shared ${CFLAGS} ${PYINC} ${LINK} ${EXTRA} params.o bp.o pysib.cpp -o $@
 
 test: all doctest
 	${PYTHON} test/run_tests.py

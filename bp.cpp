@@ -24,6 +24,7 @@ using namespace std;
 
 int const Tinf = 1000000;
 
+
 template<class T>
 void cumsum(Message<T> & m, int a, int b)
 {
@@ -40,7 +41,8 @@ void cumsum(Message<T> & m, int a, int b)
 	}
 }
 
-void FactorGraph::append_time(int i, times_t t)
+template<>
+void BPGraph::append_time(int i, times_t t)
 {
 	add_node(i);
 	Node & n = nodes[i];
@@ -60,7 +62,8 @@ void FactorGraph::append_time(int i, times_t t)
 	throw invalid_argument("observation time unexistent and too small");
 }
 
-void FactorGraph::append_observation(int i, int s, times_t t)
+template<>
+void BPGraph::append_observation(int i, int s, times_t t)
 {
 	append_time(i, t);
 	set_field(i, s, t);
@@ -68,7 +71,8 @@ void FactorGraph::append_observation(int i, int s, times_t t)
 
 
 
-void FactorGraph::reset_observations(vector<tuple<int, int, times_t> > const & obs)
+template<>
+void BPGraph::reset_observations(vector<tuple<int, int, times_t> > const & obs)
 {
 	vector<vector<times_t>> tobs(nodes.size());
 	vector<vector<int>> sobs(nodes.size());
@@ -139,7 +143,8 @@ void FactorGraph::reset_observations(vector<tuple<int, int, times_t> > const & o
 }
 
 
-void FactorGraph::set_field(int i, int s, int tobs)
+template<class MesT>
+void FactorGraph<MesT>::set_field(int i, int s, int tobs)
 {
 	Node & n = nodes[i];
         int qi = n.times.size();
@@ -163,7 +168,7 @@ void FactorGraph::set_field(int i, int s, int tobs)
         }
 }
 
-Mes & operator++(Mes & msg)
+BPMes & operator++(BPMes & msg)
 {
 	int oldqj = msg.qj;
 	msg.qj++;
@@ -185,7 +190,7 @@ Mes & operator++(Mes & msg)
 }
 
 
-Mes & operator--(Mes & msg)
+BPMes & operator--(BPMes & msg)
 {
 	int qj = msg.qj;
 	msg.qj--;
@@ -199,7 +204,8 @@ Mes & operator--(Mes & msg)
 }
 
 
-void FactorGraph::drop_contacts(times_t t)
+template<>
+void BPGraph::drop_contacts(times_t t)
 {
 	for (size_t i = 0; i < nodes.size(); ++i) {
 		Node & fi = nodes[i];
@@ -215,7 +221,8 @@ void FactorGraph::drop_contacts(times_t t)
 	}
 }
 
-void FactorGraph::append_contact(int i, int j, times_t t, real_t lambdaij, real_t lambdaji)
+template<class TMes>
+void FactorGraph<TMes>::append_contact(int i, int j, times_t t, real_t lambdaij, real_t lambdaji)
 {
 	if (i == j)
 		throw invalid_argument("self loops are not allowed");
@@ -278,7 +285,8 @@ void FactorGraph::append_contact(int i, int j, times_t t, real_t lambdaij, real_
 }
 
 
-FactorGraph::FactorGraph(Params const & params,
+template<>
+FactorGraph<BPMes>::FactorGraph(Params const & params,
 		vector<tuple<int, int, times_t, real_t> > const & contacts,
 		vector<tuple<int, int, times_t> > const & obs,
 		vector<tuple<int, std::shared_ptr<Proba>, std::shared_ptr<Proba>, std::shared_ptr<Proba>, std::shared_ptr<Proba>>> const & individuals) :
@@ -314,7 +322,8 @@ FactorGraph::FactorGraph(Params const & params,
 	reset_observations(obs);
 }
 
-int FactorGraph::find_neighbor(int i, int j) const
+template<>
+int BPGraph::find_neighbor(int i, int j) const
 {
 	int k = 0;
 	for (; k < int(nodes[i].neighs.size()); ++k)
@@ -323,61 +332,8 @@ int FactorGraph::find_neighbor(int i, int j) const
 	return k;
 }
 
-void FactorGraph::add_node(int i)
-{
-	for (int j = nodes.size(); j < i + 1; ++j)
-		nodes.push_back(Node(params.prob_i, params.prob_r, j));
-}
 
-void FactorGraph::show_graph()
-{
-	cerr << "Number of nodes " <<  int(nodes.size()) << endl;
-	for(int i = 0; i < int(nodes.size()); i++) {
-		cerr << "### index " << i << "###" << endl;
-		cerr << "### in contact with " <<  int(nodes[i].neighs.size()) << "nodes" << endl;
-		vector<Neigh> const & aux = nodes[i].neighs;
-		for (int j = 0; j < int(aux.size()); j++) {
-			cerr << "# neighbor " << aux[j].index << endl;
-			cerr << "# in position " << aux[j].pos << endl;
-			cerr << "# in contact " << int(aux[j].t.size()) << " times, in t: ";
-			for (int s = 0; s < int(aux[j].t.size()); s++)
-				cerr << aux[j].t[s] << " ";
-			cerr << " " << endl;
-		}
-	}
-}
-
-void FactorGraph::show_beliefs(ostream & ofs)
-{
-	for(int i = 0; i < int(nodes.size()); ++i) {
-		Node & f = nodes[i];
-		ofs << "node " << i << ":" << endl;
-		for (int t = 0; t < int(f.bt.size()); ++t) {
-			ofs << "    " << f.times[t] << " " << f.bt[t] << " (" << f.ht[t] << ") " << f.bg[t] << " (" << f.hg[t] << ")" << endl;
-		}
-	}
-
-}
-
-void FactorGraph::show_msg(ostream & o)
-{
-	for(int i = 0; i < int(nodes.size()); ++i) {
-		auto & n = nodes[i];
-		for(int j = 0; j < int(n.neighs.size()); ++j) {
-			auto & v = n.neighs[j];
-			o << i << " <- " << v.index << " : " << endl;
-			for (int sij = 0; sij < int(v.msg.qj); ++sij) {
-				for (int sji = 0; sji < int(v.msg.qj); ++sji) {
-					o << v.msg(sij, sji) << " ";
-				}
-				o << endl;
-			}
-
-		}
-	}
-}
-
-void norm_msg(Mes & msg)
+void norm_msg(BPMes & msg)
 {
 	real_t S = 0;
 	for(int n = 0; n < int(msg.size()); ++n)
@@ -419,11 +375,11 @@ ostream & operator<<(ostream & o, vector<real_t> const & m)
 	return o;
 }
 
-void update_limits(int ti, Node const &f, vector<int> & min_in, vector<int> & min_out)
+void update_limits(int ti, NodeType<BPMes> const &f, vector<int> & min_in, vector<int> & min_out)
 {
 	int n = min_in.size();
 	for (int j = 0; j < n; ++j) {
-		Neigh const & v = f.neighs[j];
+		NeighType<BPMes> const & v = f.neighs[j];
 		int qj = v.t.size();
 		int const *b = &v.t[0];
 		int const *e = &v.t[0] + qj - 1;
@@ -432,7 +388,8 @@ void update_limits(int ti, Node const &f, vector<int> & min_in, vector<int> & mi
 	}
 }
 
-real_t FactorGraph::update(int i, real_t damping, bool learn)
+template<>
+real_t BPGraph::update(int i, real_t damping, bool learn)
 {
 	Node & f = nodes[i];
 	int const n = f.neighs.size();
@@ -441,7 +398,7 @@ real_t FactorGraph::update(int i, real_t damping, bool learn)
 	RealParams const zero_r = RealParams(0.0, f.prob_r->theta.size());
 	RealParams const zero_i = RealParams(0.0, f.prob_i->theta.size());
 	// allocate buffers
-	vector<Mes> UU, HH, M, R;
+	vector<BPMes> UU, HH, M, R;
 	vector<Message<RealParams>> dM, dR;
 	vector<real_t> ut(qi), ug(qi);
 	vector<vector<real_t>> CG0, CG01;
@@ -451,9 +408,9 @@ real_t FactorGraph::update(int i, real_t damping, bool learn)
 		v.lock();
 		HH.push_back(v.msg);
 		v.unlock();
-		UU.push_back(Mes(v.t.size()));
-		R.push_back(Mes(v.t.size()));
-		M.push_back(Mes(v.t.size()));
+		UU.push_back(BPMes(v.t.size()));
+		R.push_back(BPMes(v.t.size()));
+		M.push_back(BPMes(v.t.size()));
 		CG0.push_back(vector<real_t>(v.t.size() + 1));
 		CG01.push_back(vector<real_t>(v.t.size() + 1));
 		if (learn) {
@@ -485,10 +442,10 @@ real_t FactorGraph::update(int i, real_t damping, bool learn)
 		update_limits(ti, f, min_in, min_out);
 
 		for (int j = 0; j < n; ++j) {
-			Mes & m = M[j]; // no need to clear, just use the bottom right corner
-			Mes & r = R[j];
+			BPMes & m = M[j]; // no need to clear, just use the bottom right corner
+			BPMes & r = R[j];
 			Neigh const & v = f.neighs[j];
-			Mes const & h = HH[j];
+			BPMes const & h = HH[j];
 			int const qj = h.qj;
 
 			real_t pi = 1;
@@ -551,8 +508,8 @@ real_t FactorGraph::update(int i, real_t damping, bool learn)
 					continue;
 				min_g[j] = newming;
 				changed = true;
-				Mes & m = M[j];
-				Mes & r = R[j];
+				BPMes & m = M[j];
+				BPMes & r = R[j];
 				//grad m & r
 				/*
 				   .-----min_out
@@ -675,21 +632,9 @@ real_t FactorGraph::update(int i, real_t damping, bool learn)
 
 }
 
-real_t FactorGraph::iteration(real_t damping, bool learn)
-{
-	int const N = nodes.size();
-	real_t err = 0.0;
-	vector<int> perm(N);
-	for(int i = 0; i < N; ++i)
-		perm[i] = i;
-	random_shuffle(perm.begin(), perm.end());
-#pragma omp parallel for reduction(max:err)
-	for(int i = 0; i < N; ++i)
-		err = max(err, update(perm[i], damping, learn));
-	return err;
-}
 
-real_t FactorGraph::loglikelihood() const
+template<>
+real_t BPGraph::loglikelihood() const
 {
 	real_t L = 0;
 	for(auto nit = nodes.begin(), nend = nodes.end(); nit != nend; ++nit)
@@ -697,19 +642,8 @@ real_t FactorGraph::loglikelihood() const
 	return L;
 }
 
-real_t FactorGraph::iterate(int maxit, real_t tol, real_t damping, bool learn)
-{
-	real_t err = numeric_limits<real_t>::infinity();
-	for (int it = 1; it <= maxit; ++it) {
-		err = iteration(damping, learn);
-		cout << "it: " << it << " err: " << err << endl;
-		if (err < tol)
-			break;
-	}
-	return err;
-}
-
-ostream & operator<<(ostream & ost, FactorGraph const & f)
+template<>
+ostream & operator<<(ostream & ost, BPGraph const & f)
 {
 	int nasym = 0;
 	int nedge = 0;
@@ -725,7 +659,7 @@ ostream & operator<<(ostream & ost, FactorGraph const & f)
 		}
 	}
 
-	return ost << "FactorGraph\n"
+	return ost << "BPGraph\n"
                 << "            nodes: " << f.nodes.size() << "\n"
 		<< "            edges: " << nedge << " ("  << nasym <<  " asymmetric)\n"
 		<< "    time contacts: " << ncont;

@@ -29,10 +29,11 @@ struct Message : public std::vector<T>
 	size_t qj;
 };
 
-typedef Message<real_t> Mes;
+typedef Message<real_t> BPMes;
 
-struct Neigh {
-	Neigh(int index, int pos) : index(index), pos(pos), t(1, Tinf), lambdas(1, 0.0), msg(1, 1.0) {
+template<class Mes>
+struct NeighType {
+	NeighType(int index, int pos) : index(index), pos(pos), t(1, Tinf), lambdas(1, 0.0), msg(1, 1.0) {
 		omp_init_lock(&lock_);
 
 	}
@@ -40,14 +41,15 @@ struct Neigh {
 	int pos;    // position of the node in neighbors list
 	std::vector<int> t; // time index of contacts
 	std::vector<real_t> lambdas; // transmission probability
-	Mes msg; // BP msg nij^2 or
+	BPMes msg; // BP msg nij^2 or
 	void lock() const { omp_set_lock(&lock_); }
 	void unlock() const { omp_unset_lock(&lock_); }
 	mutable omp_lock_t lock_;
 };
 
-struct Node {
-	Node(std::shared_ptr<Proba> prob_i, std::shared_ptr<Proba> prob_r, int index) :
+template<class TMes>
+struct NodeType {
+	NodeType(std::shared_ptr<Proba> prob_i, std::shared_ptr<Proba> prob_r, int index) :
 		prob_i(prob_i),
 		prob_r(prob_r),
 		prob_i0(prob_i),
@@ -84,7 +86,7 @@ struct Node {
 	std::vector<real_t> bg;  // marginals recovery times G[ni+2]
 	std::vector<real_t> ht;  // message infection times T[ni+2]
 	std::vector<real_t> hg;  // message recovery times G[ni+2]
-	std::vector<Neigh> neighs;	   // list of neighbors
+	std::vector<NeighType<TMes>> neighs;	   // list of neighbors
 	real_t f_;
 	real_t err_;
 	RealParams df_i;
@@ -92,8 +94,12 @@ struct Node {
 	int index;
 };
 
+template<class TMes>
 class FactorGraph {
 public:
+	typedef TMes Mes;
+	typedef NodeType<Mes> Node;
+	typedef NeighType<Mes> Neigh;
 	std::vector<Node> nodes;
 	FactorGraph(Params const & params,
 		std::vector<std::tuple<int,int,times_t,real_t> > const & contacts,
@@ -120,6 +126,121 @@ public:
 	enum ARRAY_ENUM { DO_NOT_OVERWRITE = -1 };
 };
 
-std::ostream & operator<<(std::ostream &, FactorGraph const &);
+template<class TMes>
+std::ostream & operator<<(std::ostream &, FactorGraph<TMes> const &);
+
+typedef FactorGraph<BPMes> BPGraph;
+
+
+template<class TMes>
+void FactorGraph<TMes>::add_node(int i)
+{
+	for (int j = nodes.size(); j < i + 1; ++j)
+		nodes.push_back(Node(params.prob_i, params.prob_r, j));
+}
+
+template<class TMes>
+void FactorGraph<TMes>::show_graph()
+{
+	std::cerr << "Number of nodes " <<  int(nodes.size()) << std::endl;
+	for(int i = 0; i < int(nodes.size()); i++) {
+		std::cerr << "### index " << i << "###" << std::endl;
+		std::cerr << "### in contact with " <<  int(nodes[i].neighs.size()) << "nodes" << std::endl;
+		std::vector<Neigh> const & aux = nodes[i].neighs;
+		for (int j = 0; j < int(aux.size()); j++) {
+			std::cerr << "# neighbor " << aux[j].index << std::endl;
+			std::cerr << "# in position " << aux[j].pos << std::endl;
+			std::cerr << "# in contact " << int(aux[j].t.size()) << " times, in t: ";
+			for (int s = 0; s < int(aux[j].t.size()); s++)
+				std::cerr << aux[j].t[s] << " ";
+			std::cerr << " " << std::endl;
+		}
+	}
+}
+
+template<class TMes>
+void FactorGraph<TMes>::show_beliefs(std::ostream & ofs)
+{
+	for(int i = 0; i < int(nodes.size()); ++i) {
+		Node & f = nodes[i];
+		ofs << "node " << i << ":" << std::endl;
+		for (int t = 0; t < int(f.bt.size()); ++t) {
+			ofs << "    " << f.times[t] << " " << f.bt[t] << " (" << f.ht[t] << ") " << f.bg[t] << " (" << f.hg[t] << ")" << std::endl;
+		}
+	}
+
+}
+
+template<class TMes>
+void FactorGraph<TMes>::show_msg(std::ostream & o)
+{
+	for(int i = 0; i < int(nodes.size()); ++i) {
+		auto & n = nodes[i];
+		for(int j = 0; j < int(n.neighs.size()); ++j) {
+			auto & v = n.neighs[j];
+			o << i << " <- " << v.index << " : " << std::endl;
+			for (int sij = 0; sij < int(v.msg.qj); ++sij) {
+				for (int sji = 0; sji < int(v.msg.qj); ++sji) {
+					o << v.msg(sij, sji) << " ";
+				}
+				o << std::endl;
+			}
+
+		}
+	}
+}
+
+template<class TMes>
+real_t FactorGraph<TMes>::iteration(real_t damping, bool learn)
+{
+	int const N = nodes.size();
+	real_t err = 0.0;
+	std::vector<int> perm(N);
+	for(int i = 0; i < N; ++i)
+		perm[i] = i;
+	random_shuffle(perm.begin(), perm.end());
+#pragma omp parallel for reduction(max:err)
+	for(int i = 0; i < N; ++i)
+		err = std::max(err, update(perm[i], damping, learn));
+	return err;
+}
+
+template<class TMes>
+real_t FactorGraph<TMes>::iterate(int maxit, real_t tol, real_t damping, bool learn)
+{
+	real_t err = std::numeric_limits<real_t>::infinity();
+	for (int it = 1; it <= maxit; ++it) {
+		err = iteration(damping, learn);
+		std::cout << "it: " << it << " err: " << err << std::endl;
+		if (err < tol)
+			break;
+	}
+	return err;
+}
+
+template<class TMes>
+void drop_time(FactorGraph<TMes> & fg, int t)
+{
+        fg.drop_contacts(t);
+        int n = fg.nodes.size();
+        for (int i = 0; i < n; ++i) {
+                NodeType<TMes> & f = fg.nodes[i];
+                if (t == f.times[1]) {
+                        f.bt.erase(f.bt.begin());
+                        f.bg.erase(f.bg.begin());
+                        f.ht.erase(f.ht.begin());
+                        f.hg.erase(f.hg.begin());
+			f.times.erase(f.times.begin() + 1);
+			int m = f.neighs.size();
+			for (int j = 0; j < m; ++j) {
+				NeighType<TMes> & v = f.neighs[j];
+				for (int k = 0; k < int(v.t.size()); ++k) {
+					--v.t[k];
+				}
+			}
+                }
+		f.times[0] = t;
+        }
+}
 
 #endif

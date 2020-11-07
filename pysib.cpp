@@ -15,8 +15,11 @@
 #include <iterator>
 #include <exception>
 #include "bp.h"
-#include "drop.h"
 
+
+
+typedef NodeType<BPMes> Node;
+typedef NeighType<BPMes> Neigh;
 
 PYBIND11_MAKE_OPAQUE(std::valarray<real_t>);
 PYBIND11_MAKE_OPAQUE(std::vector<real_t>);
@@ -42,7 +45,7 @@ vector<real_t> make_vector(py::list & l)
 }
 
 map<int, vector<times_t> >
-get_times(FactorGraph const & f) {
+get_times(BPGraph const & f) {
         map<int, vector<times_t> > times;
         for (int i = 0; i < int(f.nodes.size()); ++i) {
             times[i] = f.nodes[i].times;
@@ -78,7 +81,7 @@ tuple<real_t, real_t, real_t> get_marginal_index(Node const & n, int t)
 
 
 
-void check_index(FactorGraph const & G, int i)
+void check_index(BPGraph const & G, int i)
 {
         if (i < 0 || i >= int(G.nodes.size()))
                 throw invalid_argument("unexistent index");
@@ -204,7 +207,7 @@ PYBIND11_MODULE(_sib, m) {
         .def_readwrite("learn_rate", &Params::learn_rate)
         .def("__repr__", &lexical_cast<string, Params>);
 
-    py::class_<FactorGraph>(m, "FactorGraph", "SIB class representing the graphical model of the epidemics")
+    py::class_<BPGraph>(m, "FactorGraph", "SIB class representing the graphical model of the epidemics")
         .def(py::init<Params const &,
                 vector<tuple<int,int,times_t,real_t>>,
                 vector<tuple<int,int,times_t>>,
@@ -214,43 +217,33 @@ PYBIND11_MODULE(_sib, m) {
                 py::arg("contacts") = vector<tuple<int,int,times_t,real_t>>(),
                 py::arg("observations") = vector<tuple<int,int,times_t>>(),
                 py::arg("individuals") = vector<tuple<int,shared_ptr<Proba>,shared_ptr<Proba>,shared_ptr<Proba>,shared_ptr<Proba>>>())
-        .def("update", &FactorGraph::iteration,
+        .def("update", &BPGraph::iteration,
                 py::arg("damping") = 0.0,
                 py::arg("learn") = false,
                 "perform one iteration")
-        .def("loglikelihood", &FactorGraph::loglikelihood, "compute the bethe log-likelihood")
-        .def("__repr__", &lexical_cast<string, FactorGraph>)
-        .def("append_contact", (void (FactorGraph::*)(int,int,times_t,real_t,real_t)) &FactorGraph::append_contact,
+        .def("loglikelihood", &BPGraph::loglikelihood, "compute the bethe log-likelihood")
+        .def("__repr__", &lexical_cast<string, BPGraph>)
+        .def("append_contact", (void (BPGraph::*)(int,int,times_t,real_t,real_t)) &BPGraph::append_contact,
                 py::arg("i"),
                 py::arg("j"),
                 py::arg("t"),
                 py::arg("lambdaij"),
-                py::arg("lambdaji") = real_t(FactorGraph::DO_NOT_OVERWRITE),
+                py::arg("lambdaji") = real_t(BPGraph::DO_NOT_OVERWRITE),
                 "appends a new contact from i to j at time t with transmission probabilities lambdaij, lambdaji")
-        .def("reset_observations", &FactorGraph::reset_observations,
+        .def("reset_observations", &BPGraph::reset_observations,
                 py::arg("obs"),
                 "resets all observations")
-        .def("append_observation", &FactorGraph::append_observation,
+        .def("append_observation", &BPGraph::append_observation,
                 py::arg("i"),
                 py::arg("s"),
                 py::arg("t"),
                 "appends a new observation with state s to node i at time t")
-        .def("show", &FactorGraph::show_graph)
-        .def("drop_contacts", &FactorGraph::drop_contacts, "drop contacts at time t (first time)")
-        .def("drop_time", &drop_time, "drop time t (first time)")
-        .def("drop_sc", &drop_sc,
-                py::arg("t"),
-                py::arg("maxit_bp") = 1,
-                py::arg("tol_bp") = 1e-3,
-                py::arg("damping_bp") = 0.0,
-                py::arg("maxit_sc") = 20,
-                py::arg("tol_sc") = 1e-3,
-                py::arg("damping_sc") = 0.1,
-                "drop contacts at time t (first time), adjusting fields")
-
-        .def("showmsg", [](FactorGraph & f){f.show_msg(std::cout);}, "show messages for debugging")
-        .def_readonly("nodes", &FactorGraph::nodes, "all nodes in this FactorGraph")
-        .def_readonly("params", &FactorGraph::params, "parameters");
+        .def("show", &BPGraph::show_graph)
+        .def("drop_contacts", &BPGraph::drop_contacts, "drop contacts at time t (first time)")
+        .def("drop_time", &drop_time<BPMes>, "drop time t (first time)")
+        .def("showmsg", [](BPGraph & f){f.show_msg(std::cout);}, "show messages for debugging")
+        .def_readonly("nodes", &BPGraph::nodes, "all nodes in this BPGraph")
+        .def_readonly("params", &BPGraph::params, "parameters");
 
     py::class_<Node>(m, "Node", "SIB class representing an individual")
         .def("marginal", &get_marginal, "compute marginal probabilities (pS,pI,pR) corresponding to times n.times[1:]")
