@@ -41,104 +41,6 @@ void cumsum(Message<T> & m, int a, int b)
 	}
 }
 
-template<>
-void BPGraph::append_time(int i, times_t t)
-{
-	add_node(i);
-	Node & n = nodes[i];
-	// most common case
-	if (t == n.times[n.times.size() - 2]
-		|| t == *lower_bound(n.times.begin(), n.times.end(), t))
-		return;
-	if (t > n.times[n.times.size() - 2]) {
-		n.push_back_time(t);
-                // adjust infinite times
-                for (int j = 0; j < int(n.neighs.size()); ++j) {
-                        n.neighs[j].t.back() = n.times.size() - 1;
-                }
-		return;
-        }
-	cerr << t << " < " << n.times[n.times.size() - 2] << endl;
-	throw invalid_argument("observation time unexistent and too small");
-}
-
-template<>
-void BPGraph::append_observation(int i, int s, times_t t)
-{
-	append_time(i, t);
-	set_field(i, s, t);
-}
-
-template<>
-void BPGraph::reset_observations(vector<tuple<int, int, times_t> > const & obs)
-{
-	vector<vector<times_t>> tobs(nodes.size());
-	vector<vector<int>> sobs(nodes.size());
-	for (auto it = obs.begin(); it != obs.end(); ++it) {
-		sobs[get<0>(*it)].push_back(get<1>(*it));
-		tobs[get<0>(*it)].push_back(get<2>(*it));
-	}
-	int largeT = 0;
-	for (int i = 0; i < int(nodes.size()); ++i) {
-		largeT = max(largeT, int(nodes[i].times.size()));
-	}
-	vector<int> FS(largeT), FI(largeT), TS(largeT), TI(largeT), TR(largeT);
-	vector<real_t> pFS(largeT, 1.0), pFI(largeT, 1.0), pTS(largeT, 1.0), pTI(largeT, 1.0);
-
-	for (int t = 1; t < largeT; ++t) {
-		pTI[t] = pTI[t-1] * (1-params.fp_rate);
-		pFI[t] = pFI[t-1] * params.fp_rate;
-		pTS[t] = pTS[t-1] * (1-params.fn_rate);
-		pFS[t] = pFS[t-1] * params.fn_rate;
-	}
-	for (int i = 0; i < int(nodes.size()); ++i) {
-		fill(TS.begin(), TS.end(), 0);
-		fill(FS.begin(), FS.end(), 0);
-		fill(TI.begin(), TI.end(), 0);
-		fill(FI.begin(), FI.end(), 0);
-		fill(TR.begin(), TR.end(), 0);
-		// this assumes ordered observation times
-		int T = nodes[i].times.size();
-		int t = 0;
-		for (int k = 0; k < int(tobs[i].size()); ++k) {
-			int state = sobs[i][k];
-			int to = tobs[i][k];
-			while (nodes[i].times[t] != to && t < T)
-				t++;
-			if (nodes[i].times[t] != to)
-				throw invalid_argument(("this is a bad time: node" + to_string(i) + " time " + to_string(t)).c_str());
-			switch(state) {
-				case 0:
-					FS[0]++;
-					FS[t]--;
-					TS[t]++;
-					break;
-				case 1:
-					TI[0]++;
-					TI[t]--;
-					FI[t]++;
-					TR[0]++;
-					TR[t]--;
-					break;
-				case 2:
-					TR[t]++;
-					TI[t]++;
-					break;
-			}
-		}
-		int fs = 0, fi = 0, ts = 0, ti = 0, tr = 0;
-		for (int t = 0; t < T; ++t) {
-			fs += FS[t];
-			fi += FI[t];
-			ts += TS[t];
-			ti += TI[t];
-			tr += TR[t];
-			nodes[i].ht[t] = pFS[fs] * pTS[ts] * pFI[fi] * pTI[ti];
-			nodes[i].hg[t] = tr == 0;
-
-		}
-	}
-}
 
 BPMes & operator++(BPMes & msg)
 {
@@ -176,22 +78,6 @@ BPMes & operator--(BPMes & msg)
 }
 
 
-template<>
-void BPGraph::drop_contacts(times_t t)
-{
-	for (size_t i = 0; i < nodes.size(); ++i) {
-		Node & fi = nodes[i];
-		for (size_t k = 0; k < fi.neighs.size(); ++k) {
-			if (fi.times[fi.neighs[k].t[0]] < t)
-				throw invalid_argument("can only drop first contact");
-			else if (fi.times[fi.neighs[k].t[0]] == t) {
-				fi.neighs[k].t.erase(fi.neighs[k].t.begin(), fi.neighs[k].t.begin() + 1);
-				fi.neighs[k].lambdas.erase(fi.neighs[k].lambdas.begin(), fi.neighs[k].lambdas.begin() + 1);
-				--fi.neighs[k].msg;
-			}
-		}
-	}
-}
 
 template<class TMes>
 void FactorGraph<TMes>::append_contact(int i, int j, times_t t, real_t lambdaij, real_t lambdaji)
@@ -340,9 +226,8 @@ real_t setmes(vector<real_t> & from, vector<real_t> & to, real_t damp)
 ostream & operator<<(ostream & o, vector<real_t> const & m)
 {
 	o << "{";
-	for (int i=0; i<int(m.size()); ++i){
+	for (int i=0; i<int(m.size()); ++i)
 		o << m[i] << " ";
-	}
 	o << "}";
 	return o;
 }
