@@ -69,8 +69,6 @@ void BPGraph::append_observation(int i, int s, times_t t)
 	set_field(i, s, t);
 }
 
-
-
 template<>
 void BPGraph::reset_observations(vector<tuple<int, int, times_t> > const & obs)
 {
@@ -140,32 +138,6 @@ void BPGraph::reset_observations(vector<tuple<int, int, times_t> > const & obs)
 
 		}
 	}
-}
-
-
-template<class MesT>
-void FactorGraph<MesT>::set_field(int i, int s, int tobs)
-{
-	Node & n = nodes[i];
-        int qi = n.times.size();
-        switch (s) {
-                case 0:
-			for (int t = 0; t < qi; ++t)
-				n.ht[t] *= params.fn_rate * (n.times[t] < tobs) + (1 - params.fn_rate) * (n.times[t] >= tobs);
-                        break;
-                case 1:
-			for (int t = 0; t < qi; ++t) {
-				n.ht[t] *= (1 - params.fp_rate) * (n.times[t] < tobs) + params.fp_rate * (n.times[t] >= tobs);
-				n.hg[t] *= (n.times[t] >= tobs);
-			}
-                        break;
-                case 2:
-			for (int t = 0; t < qi; ++t) {
-				n.ht[t] *= (n.times[t] < tobs);
-				n.hg[t] *= (n.times[t] < tobs);
-			}
-                        break;
-        }
 }
 
 BPMes & operator++(BPMes & msg)
@@ -642,26 +614,4 @@ real_t BPGraph::loglikelihood() const
 	return L;
 }
 
-template<>
-ostream & operator<<(ostream & ost, BPGraph const & f)
-{
-	int nasym = 0;
-	int nedge = 0;
-	int ncont = 0;
-	for(int i = 0; i < int(f.nodes.size()); ++i) {
-		for (auto vit = f.nodes[i].neighs.begin(), vend = f.nodes[i].neighs.end(); vit != vend; ++vit) {
-                        if (vit->index < i)
-                                continue;
-			++nedge;
-			ncont += vit->lambdas.size() - 1;
-			if (vit->lambdas != f.nodes[vit->index].neighs[vit->pos].lambdas)
-				++nasym;
-		}
-	}
-
-	return ost << "BPGraph\n"
-                << "            nodes: " << f.nodes.size() << "\n"
-		<< "            edges: " << nedge << " ("  << nasym <<  " asymmetric)\n"
-		<< "    time contacts: " << ncont;
-}
 

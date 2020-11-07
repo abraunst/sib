@@ -3,6 +3,9 @@
 // Author: Alessandro Ingrosso
 // Author: Anna Paola Muntoni
 
+#ifndef FACTORGRAPH_H
+#define FACTORGRAPH_H
+
 #include <vector>
 #include <iostream>
 #include <memory>
@@ -11,27 +14,11 @@
 #include "params.h"
 
 
-#ifndef FACTORGRAPH_H
-#define FACTORGRAPH_H
 
 extern int const Tinf;
 
 
-template<class T>
-struct Message : public std::vector<T>
-{
-	Message(size_t qj, T const & val) : std::vector<T>(qj*qj, val), qj(qj) {}
-	Message(size_t qj) : std::vector<T>(qj*qj), qj(qj) {}
-	void clear() { for (int i = 0; i < int(std::vector<T>::size()); ++i) std::vector<T>::operator[](i)*=0.0; }
-	size_t dim() const { return qj;}
-	inline T & operator()(int sji, int sij) { return std::vector<T>::operator[](qj * sij + sji); }
-	inline T const & operator()(int sji, int sij) const { return std::vector<T>::operator[](qj * sij + sji); }
-	size_t qj;
-};
-
-typedef Message<real_t> BPMes;
-
-template<class Mes>
+template<class TMes>
 struct NeighType {
 	NeighType(int index, int pos) : index(index), pos(pos), t(1, Tinf), lambdas(1, 0.0), msg(1, 1.0) {
 		omp_init_lock(&lock_);
@@ -41,7 +28,7 @@ struct NeighType {
 	int pos;    // position of the node in neighbors list
 	std::vector<int> t; // time index of contacts
 	std::vector<real_t> lambdas; // transmission probability
-	BPMes msg; // BP msg nij^2 or
+	TMes msg; // BP msg nij^2 or
 	void lock() const { omp_set_lock(&lock_); }
 	void unlock() const { omp_unset_lock(&lock_); }
 	mutable omp_lock_t lock_;
@@ -127,10 +114,27 @@ public:
 };
 
 template<class TMes>
-std::ostream & operator<<(std::ostream &, FactorGraph<TMes> const &);
+std::ostream & operator<<(std::ostream & ost, FactorGraph<TMes> const & f)
+{
+	int nasym = 0;
+	int nedge = 0;
+	int ncont = 0;
+	for(int i = 0; i < int(f.nodes.size()); ++i) {
+		for (auto vit = f.nodes[i].neighs.begin(), vend = f.nodes[i].neighs.end(); vit != vend; ++vit) {
+                        if (vit->index < i)
+                                continue;
+			++nedge;
+			ncont += vit->lambdas.size() - 1;
+			if (vit->lambdas != f.nodes[vit->index].neighs[vit->pos].lambdas)
+				++nasym;
+		}
+	}
 
-typedef FactorGraph<BPMes> BPGraph;
-
+	return ost << "FactorGraph\n"
+                << "            nodes: " << f.nodes.size() << "\n"
+		<< "            edges: " << nedge << " ("  << nasym <<  " asymmetric)\n"
+		<< "    time contacts: " << ncont;
+}
 
 template<class TMes>
 void FactorGraph<TMes>::add_node(int i)
@@ -240,6 +244,31 @@ void drop_time(FactorGraph<TMes> & fg, int t)
 			}
                 }
 		f.times[0] = t;
+        }
+}
+
+template<class TMes>
+void FactorGraph<TMes>::set_field(int i, int s, int tobs)
+{
+	Node & n = nodes[i];
+        int qi = n.times.size();
+        switch (s) {
+                case 0:
+			for (int t = 0; t < qi; ++t)
+				n.ht[t] *= params.fn_rate * (n.times[t] < tobs) + (1 - params.fn_rate) * (n.times[t] >= tobs);
+                        break;
+                case 1:
+			for (int t = 0; t < qi; ++t) {
+				n.ht[t] *= (1 - params.fp_rate) * (n.times[t] < tobs) + params.fp_rate * (n.times[t] >= tobs);
+				n.hg[t] *= (n.times[t] >= tobs);
+			}
+                        break;
+                case 2:
+			for (int t = 0; t < qi; ++t) {
+				n.ht[t] *= (n.times[t] < tobs);
+				n.hg[t] *= (n.times[t] < tobs);
+			}
+                        break;
         }
 }
 
