@@ -101,7 +101,68 @@ void mysetter(Proba & p, real_t x)
     p.theta[i] = x;
 }
 
-PYBIND11_MODULE(_sib, m) {
+template<class TMes>
+void init_factorgraph(py::module & m)
+{
+    py::class_<FactorGraph<TMes>>(m, "FactorGraph", "SIB class representing the graphical model of the epidemics")
+        .def(py::init<Params const &,
+                vector<tuple<int,int,times_t,real_t>>,
+                vector<tuple<int,int,times_t>>,
+                vector<tuple<int,shared_ptr<Proba>,shared_ptr<Proba>,shared_ptr<Proba>,shared_ptr<Proba>>>
+                >(),
+                py::arg("params") = Params(shared_ptr<Proba>(new Uniform(1.0)), shared_ptr<Proba>(new Exponential(0.5)), 0.1, 0.45, 0.0, 0.0, 0.0, 0.0),
+                py::arg("contacts") = vector<tuple<int,int,times_t,real_t>>(),
+                py::arg("observations") = vector<tuple<int,int,times_t>>(),
+                py::arg("individuals") = vector<tuple<int,shared_ptr<Proba>,shared_ptr<Proba>,shared_ptr<Proba>,shared_ptr<Proba>>>())
+        .def("update", &FactorGraph<TMes>::iteration,
+                py::arg("damping") = 0.0,
+                py::arg("learn") = false,
+                "perform one iteration")
+        .def("loglikelihood", &FactorGraph<TMes>::loglikelihood, "compute the bethe log-likelihood")
+        .def("__repr__", &lexical_cast<string, FactorGraph<TMes>>)
+        .def("append_contact", (void (FactorGraph<TMes>::*)(int,int,times_t,real_t,real_t)) &FactorGraph<TMes>::append_contact,
+                py::arg("i"),
+                py::arg("j"),
+                py::arg("t"),
+                py::arg("lambdaij"),
+                py::arg("lambdaji") = real_t(FactorGraph<TMes>::DO_NOT_OVERWRITE),
+                "appends a new contact from i to j at time t with transmission probabilities lambdaij, lambdaji")
+        .def("reset_observations", &FactorGraph<TMes>::reset_observations,
+                py::arg("obs"),
+                "resets all observations")
+        .def("append_observation", &FactorGraph<TMes>::append_observation,
+                py::arg("i"),
+                py::arg("s"),
+                py::arg("t"),
+                "appends a new observation with state s to node i at time t")
+        .def("show", &FactorGraph<TMes>::show_graph)
+        .def("drop_contacts", &FactorGraph<TMes>::drop_contacts, "drop contacts at time t (first time)")
+        .def("drop_time", &drop_time<BPMes>, "drop time t (first time)")
+        .def("showmsg", [](FactorGraph<TMes> & f){f.show_msg(std::cout);}, "show messages for debugging")
+        .def_readonly("nodes", &FactorGraph<TMes>::nodes, "all nodes in this FactorGraph<TMes>")
+        .def_readonly("params", &FactorGraph<TMes>::params, "parameters");
+
+    py::class_<NodeType<TMes>>(m, "Node", "SIB class representing an individual")
+        .def("marginal", &get_marginal, "compute marginal probabilities (pS,pI,pR) corresponding to times n.times[1:]")
+        .def("marginal_index", &get_marginal_index, "marginal at a given time (excluding time -1)")
+        .def_readwrite("ht", &NodeType<TMes>::ht, "external prior on ti")
+        .def_readwrite("hg", &NodeType<TMes>::hg, "external prior on gi")
+        .def_readonly("bt", &NodeType<TMes>::bt, "belief on ti")
+        .def_readonly("bg", &NodeType<TMes>::bg, "belief on gi")
+        .def_readonly("err", &NodeType<TMes>::err_, "error on update")
+        .def_readonly("df_i", &NodeType<TMes>::df_i, "gradient on prior_i params")
+        .def_readonly("df_r", &NodeType<TMes>::df_r, "gradient on prior_r params")
+        .def_readonly("times", &NodeType<TMes>::times, "event times of this node")
+        .def_readonly("index", &NodeType<TMes>::index, "node index (deprecated, do not use)")
+        .def_readonly("prob_i", &NodeType<TMes>::prob_i, "probability of infection as function of t-ti")
+        .def_readonly("prob_r", &NodeType<TMes>::prob_r, "cumulative probability of recovery P(tr>t)")
+        .def_readonly("prob_i0", &NodeType<TMes>::prob_i0, "probability of infection as function of t-ti for ti=0")
+        .def_readonly("prob_r0", &NodeType<TMes>::prob_r0, "cumulative probability of recovery P(tr>t) for ti=0");
+
+}
+
+void init_realparams(py::module & m)
+{
     py::class_<RealParams>(m, "RealParams", py::buffer_protocol())
         .def(py::init([](py::buffer const b) {
                 py::buffer_info info = b.request();
@@ -142,11 +203,10 @@ PYBIND11_MODULE(_sib, m) {
                     s+="])";
                     return s;
                 });
-    // py::add_ostream_redirect(m, "ostream_redirect");
-    py::bind_vector<std::vector<int>>(m, "VectorInt");
-    py::bind_vector<std::vector<real_t>>(m, "VectorReal");
-    py::bind_vector<std::vector<Node>>(m, "VectorNode");
+}
 
+void init_proba(py::module & m)
+{
     py::class_<Proba, shared_ptr<Proba>>(m, "Proba")
         .def("__call__", [](Proba const & p, real_t d) { return p(d); } )
         .def("grad", [](Proba const & p, real_t d) { RealParams dtheta(0.0, p.theta.size()); p.grad(dtheta, d); return dtheta;} )
@@ -184,7 +244,10 @@ PYBIND11_MODULE(_sib, m) {
     py::class_<PDF, Proba, shared_ptr<PDF>>(m, "PDF")
         .def(py::init<std::shared_ptr<Proba> const &>());
 
+}
 
+void init_params(py::module & m)
+{
     py::class_<Params>(m, "Params")
         .def(py::init<shared_ptr<Proba> const &, shared_ptr<Proba> const &, real_t, real_t, real_t, real_t, real_t, real_t>(),
                 "SIB Params class. prob_i and prob_r parameters are defaults.",
@@ -206,61 +269,19 @@ PYBIND11_MODULE(_sib, m) {
         .def_readwrite("pautoinf", &Params::pautoinf)
         .def_readwrite("learn_rate", &Params::learn_rate)
         .def("__repr__", &lexical_cast<string, Params>);
+}
 
-    py::class_<BPGraph>(m, "FactorGraph", "SIB class representing the graphical model of the epidemics")
-        .def(py::init<Params const &,
-                vector<tuple<int,int,times_t,real_t>>,
-                vector<tuple<int,int,times_t>>,
-                vector<tuple<int,shared_ptr<Proba>,shared_ptr<Proba>,shared_ptr<Proba>,shared_ptr<Proba>>>
-                >(),
-                py::arg("params") = Params(shared_ptr<Proba>(new Uniform(1.0)), shared_ptr<Proba>(new Exponential(0.5)), 0.1, 0.45, 0.0, 0.0, 0.0, 0.0),
-                py::arg("contacts") = vector<tuple<int,int,times_t,real_t>>(),
-                py::arg("observations") = vector<tuple<int,int,times_t>>(),
-                py::arg("individuals") = vector<tuple<int,shared_ptr<Proba>,shared_ptr<Proba>,shared_ptr<Proba>,shared_ptr<Proba>>>())
-        .def("update", &BPGraph::iteration,
-                py::arg("damping") = 0.0,
-                py::arg("learn") = false,
-                "perform one iteration")
-        .def("loglikelihood", &BPGraph::loglikelihood, "compute the bethe log-likelihood")
-        .def("__repr__", &lexical_cast<string, BPGraph>)
-        .def("append_contact", (void (BPGraph::*)(int,int,times_t,real_t,real_t)) &BPGraph::append_contact,
-                py::arg("i"),
-                py::arg("j"),
-                py::arg("t"),
-                py::arg("lambdaij"),
-                py::arg("lambdaji") = real_t(BPGraph::DO_NOT_OVERWRITE),
-                "appends a new contact from i to j at time t with transmission probabilities lambdaij, lambdaji")
-        .def("reset_observations", &BPGraph::reset_observations,
-                py::arg("obs"),
-                "resets all observations")
-        .def("append_observation", &BPGraph::append_observation,
-                py::arg("i"),
-                py::arg("s"),
-                py::arg("t"),
-                "appends a new observation with state s to node i at time t")
-        .def("show", &BPGraph::show_graph)
-        .def("drop_contacts", &BPGraph::drop_contacts, "drop contacts at time t (first time)")
-        .def("drop_time", &drop_time<BPMes>, "drop time t (first time)")
-        .def("showmsg", [](BPGraph & f){f.show_msg(std::cout);}, "show messages for debugging")
-        .def_readonly("nodes", &BPGraph::nodes, "all nodes in this BPGraph")
-        .def_readonly("params", &BPGraph::params, "parameters");
 
-    py::class_<Node>(m, "Node", "SIB class representing an individual")
-        .def("marginal", &get_marginal, "compute marginal probabilities (pS,pI,pR) corresponding to times n.times[1:]")
-        .def("marginal_index", &get_marginal_index, "marginal at a given time (excluding time -1)")
-        .def_readwrite("ht", &Node::ht, "external prior on ti")
-        .def_readwrite("hg", &Node::hg, "external prior on gi")
-        .def_readonly("bt", &Node::bt, "belief on ti")
-        .def_readonly("bg", &Node::bg, "belief on gi")
-        .def_readonly("err", &Node::err_, "error on update")
-        .def_readonly("df_i", &Node::df_i, "gradient on prior_i params")
-        .def_readonly("df_r", &Node::df_r, "gradient on prior_r params")
-        .def_readonly("times", &Node::times, "event times of this node")
-        .def_readonly("index", &Node::index, "node index (deprecated, do not use)")
-        .def_readonly("prob_i", &Node::prob_i, "probability of infection as function of t-ti")
-        .def_readonly("prob_r", &Node::prob_r, "cumulative probability of recovery P(tr>t)")
-        .def_readonly("prob_i0", &Node::prob_i0, "probability of infection as function of t-ti for ti=0")
-        .def_readonly("prob_r0", &Node::prob_r0, "cumulative probability of recovery P(tr>t) for ti=0");
+PYBIND11_MODULE(_sib, m) {
+    init_realparams(m);
+    init_proba(m);
+    // py::add_ostream_redirect(m, "ostream_redirect");
+    py::bind_vector<std::vector<int>>(m, "VectorInt");
+    py::bind_vector<std::vector<real_t>>(m, "VectorReal");
+    py::bind_vector<std::vector<Node>>(m, "VectorNode");
+
+    init_params(m);
+    init_factorgraph<BPMes>(m);
 
     m.def("set_num_threads", &omp_set_num_threads, "sets the maximum number of simultaneous cpu threads");
     m.def("version", [](){return VERSION;}, "compiled version of sib");
