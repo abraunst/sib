@@ -63,7 +63,7 @@ class SibillaTest(unittest.TestCase):
     def run_sib_instance(self,inst,callback_fun=callback):
         mu = self.params["mu"]
         sib_pars = sib.Params(prob_r=sib.Gamma(mu=mu))
-        sib_fg = sib.FactorGraph(sib_pars, self.contacts_sib, self.obs_all_sib[inst])
+        sib_fg = sib.BPGraph(sib_pars, self.contacts_sib, self.obs_all_sib[inst])
 
         sib.iterate(sib_fg, maxit=1000, tol=6e-6, callback=callback_fun)
 

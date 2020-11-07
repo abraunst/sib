@@ -8,10 +8,10 @@
 #include "factorgraph.h"
 
 template<class T>
-struct Message : public std::vector<T>
+struct ArrayType : public std::vector<T>
 {
-	Message(size_t qj, T const & val) : std::vector<T>(qj*qj, val), qj(qj) {}
-	Message(size_t qj) : std::vector<T>(qj*qj), qj(qj) {}
+	ArrayType(size_t qj, T const & val) : std::vector<T>(qj*qj, val), qj(qj) {}
+	ArrayType(size_t qj) : std::vector<T>(qj*qj), qj(qj) {}
 	void clear() { for (int i = 0; i < int(std::vector<T>::size()); ++i) std::vector<T>::operator[](i)*=0.0; }
 	size_t dim() const { return qj;}
 	inline T & operator()(int sji, int sij) { return std::vector<T>::operator[](qj * sij + sji); }
@@ -19,13 +19,30 @@ struct Message : public std::vector<T>
 	size_t qj;
 };
 
-typedef Message<real_t> BPMes;
+template<class T>
+std::ostream & operator<<(std::ostream & o, ArrayType<T> const & msg)
+{
+	for (size_t sij = 0; sij < msg.qj; ++sij) {
+		for (size_t sji = 0; sji < msg.qj; ++sji) {
+			o << msg(sij, sji) << " ";
+		}
+		o << std::endl;
+	}
+	return o;
+}
+
+
+typedef ArrayType<real_t> BPMes;
+
+
+
 
 BPMes & operator++(BPMes &);
 
 BPMes & operator--(BPMes &);
 
 typedef FactorGraph<BPMes> BPGraph;
+typedef NodeType<BPMes> BPNode;
 
 
 #endif

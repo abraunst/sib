@@ -9,7 +9,7 @@
 >>> params = sib.Params(fp_rate=0.1, fn_rate=0.22, pautoinf=1e-5)
 
 ####### Build a factor graph with no contacts
->>> f = sib.FactorGraph(observations=sum(observations_list, []), params=params)
+>>> f = sib.BPGraph(observations=sum(observations_list, []), params=params)
 >>> f
 FactorGraph
             nodes: 101
@@ -21,7 +21,7 @@ FactorGraph
 
 ####### Build a factor graph with contacts
 >>> contacts = [(t,t+1,t,0.5) for t in range(T)];
->>> f = sib.FactorGraph(contacts=contacts, observations=sum(observations_list, []), params=params)
+>>> f = sib.BPGraph(contacts=contacts, observations=sum(observations_list, []), params=params)
 >>> f
 FactorGraph
             nodes: 101

@@ -15,6 +15,7 @@
 #include <iterator>
 #include <exception>
 #include "bp.h"
+#include "mf.h"
 
 
 
@@ -104,7 +105,7 @@ void mysetter(Proba & p, real_t x)
 template<class TMes>
 void init_factorgraph(py::module & m)
 {
-    py::class_<FactorGraph<TMes>>(m, "FactorGraph", "SIB class representing the graphical model of the epidemics")
+    py::class_<FactorGraph<TMes>>(m, FactorGraph<TMes>::name(), "SIB class representing the graphical model of the epidemics")
         .def(py::init<Params const &,
                 vector<tuple<int,int,times_t,real_t>>,
                 vector<tuple<int,int,times_t>>,
@@ -142,7 +143,7 @@ void init_factorgraph(py::module & m)
         .def_readonly("nodes", &FactorGraph<TMes>::nodes, "all nodes in this FactorGraph<TMes>")
         .def_readonly("params", &FactorGraph<TMes>::params, "parameters");
 
-    py::class_<NodeType<TMes>>(m, "Node", "SIB class representing an individual")
+    py::class_<NodeType<TMes>>(m, NodeType<TMes>::name(), "SIB class representing an individual")
         .def("marginal", &get_marginal, "compute marginal probabilities (pS,pI,pR) corresponding to times n.times[1:]")
         .def("marginal_index", &get_marginal_index, "marginal at a given time (excluding time -1)")
         .def_readwrite("ht", &NodeType<TMes>::ht, "external prior on ti")
@@ -282,6 +283,7 @@ PYBIND11_MODULE(_sib, m) {
 
     init_params(m);
     init_factorgraph<BPMes>(m);
+    init_factorgraph<MFMes>(m);
 
     m.def("set_num_threads", &omp_set_num_threads, "sets the maximum number of simultaneous cpu threads");
     m.def("version", [](){return VERSION;}, "compiled version of sib");

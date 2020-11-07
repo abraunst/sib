@@ -64,6 +64,7 @@ struct NodeType {
                 bt.push_back(bt.back());
                 bg.push_back(bg.back());
 	}
+	static char const * name();
 	std::shared_ptr<Proba> prob_i;
 	std::shared_ptr<Proba> prob_r;
 	std::shared_ptr<Proba> prob_i0;
@@ -87,6 +88,7 @@ public:
 	typedef TMes Mes;
 	typedef NodeType<Mes> Node;
 	typedef NeighType<Mes> Neigh;
+	static char const * name();
 	std::vector<Node> nodes;
 	FactorGraph(Params const & params,
 		std::vector<std::tuple<int,int,times_t,real_t> > const & contacts,
@@ -103,12 +105,12 @@ public:
 	void set_field(int i, int s, int t);
 	void reset_observations(std::vector<std::tuple<int, int, times_t> > const & obs);
 	real_t update(int i, real_t damping, bool learn = false);
-	void show_graph();
-	void show_beliefs(std::ostream &);
+	void show_graph() const;
+	void show_beliefs(std::ostream &) const;
+	void show_msg(std::ostream &) const;
 	real_t iterate(int maxit, real_t tol, real_t damping, bool learn = false);
 	real_t iteration(real_t damping, bool learn = false);
 	real_t loglikelihood() const;
-	void show_msg(std::ostream &);
 	Params params;
 	enum ARRAY_ENUM { DO_NOT_OVERWRITE = -1 };
 };
@@ -291,7 +293,7 @@ void FactorGraph<TMes>::add_node(int i)
 }
 
 template<class TMes>
-void FactorGraph<TMes>::show_graph()
+void FactorGraph<TMes>::show_graph() const
 {
 	std::cerr << "Number of nodes " <<  int(nodes.size()) << std::endl;
 	for(int i = 0; i < int(nodes.size()); i++) {
@@ -310,10 +312,10 @@ void FactorGraph<TMes>::show_graph()
 }
 
 template<class TMes>
-void FactorGraph<TMes>::show_beliefs(std::ostream & ofs)
+void FactorGraph<TMes>::show_beliefs(std::ostream & ofs) const
 {
 	for(int i = 0; i < int(nodes.size()); ++i) {
-		Node & f = nodes[i];
+		Node const & f = nodes[i];
 		ofs << "node " << i << ":" << std::endl;
 		for (int t = 0; t < int(f.bt.size()); ++t) {
 			ofs << "    " << f.times[t] << " " << f.bt[t] << " (" << f.ht[t] << ") " << f.bg[t] << " (" << f.hg[t] << ")" << std::endl;
@@ -323,20 +325,14 @@ void FactorGraph<TMes>::show_beliefs(std::ostream & ofs)
 }
 
 template<class TMes>
-void FactorGraph<TMes>::show_msg(std::ostream & o)
+void FactorGraph<TMes>::show_msg(std::ostream & o) const
 {
-	for(int i = 0; i < int(nodes.size()); ++i) {
+	for (int i = 0; i < int(nodes.size()); ++i) {
 		auto & n = nodes[i];
 		for(int j = 0; j < int(n.neighs.size()); ++j) {
-			auto & v = n.neighs[j];
+			Neigh const & v = n.neighs[j];
 			o << i << " <- " << v.index << " : " << std::endl;
-			for (int sij = 0; sij < int(v.msg.qj); ++sij) {
-				for (int sji = 0; sji < int(v.msg.qj); ++sji) {
-					o << v.msg(sij, sji) << " ";
-				}
-				o << std::endl;
-			}
-
+			o << v.msg << std::endl;
 		}
 	}
 }

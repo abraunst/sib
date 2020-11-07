@@ -11,14 +11,14 @@
 >>> params = sib.Params(fp_rate=0.1, fn_rate=0.22, pautoinf=1e-5)
 
 ####### Build a factor graph with contacts and drop two times
->>> f = sib.FactorGraph(contacts=sum(contacts, []), observations=sum(observations_list, []), params=params)
+>>> f = sib.BPGraph(contacts=sum(contacts, []), observations=sum(observations_list, []), params=params)
 >>> f.drop_time(0)
 >>> f.drop_time(1)
 >>> sib.iterate(f, tol=1e-10, callback=None)
 >>> m = [np.array(n.bt) for n in f.nodes]
 
 ####### Build a factor graph with one fewer time and drop only one time
->>> f1 = sib.FactorGraph(contacts=sum(contacts[1:], []), observations=sum(observations_list[1:], []), params=params)
+>>> f1 = sib.BPGraph(contacts=sum(contacts[1:], []), observations=sum(observations_list[1:], []), params=params)
 >>> f1.drop_time(1)
 >>> sib.iterate(f1, tol=1e-10, callback=None)
 >>> m1 = [np.array(n.bt) for n in f1.nodes]

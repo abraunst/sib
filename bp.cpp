@@ -26,7 +26,7 @@ int const Tinf = 1000000;
 
 
 template<class T>
-void cumsum(Message<T> & m, int a, int b)
+void cumsum(ArrayType<T> & m, int a, int b)
 {
 	T r = m(0, 0);
 	for (int sij = m.qj - 2; sij >= b; --sij)
@@ -41,6 +41,17 @@ void cumsum(Message<T> & m, int a, int b)
 	}
 }
 
+template<>
+char const * BPGraph::name()
+{
+	return "BPGraph";
+}
+
+template<>
+char const * BPNode::name()
+{
+	return "BPNode";
+}
 
 BPMes & operator++(BPMes & msg)
 {
@@ -113,7 +124,7 @@ real_t BPGraph::update(int i, real_t damping, bool learn)
 	RealParams const zero_i = RealParams(0.0, f.prob_i->theta.size());
 	// allocate buffers
 	vector<BPMes> UU, HH, M, R;
-	vector<Message<RealParams>> dM, dR;
+	vector<ArrayType<RealParams>> dM, dR;
 	vector<real_t> ut(qi), ug(qi);
 	vector<vector<real_t>> CG0, CG01;
 	vector<RealParams> dC0, dC1;
@@ -128,8 +139,8 @@ real_t BPGraph::update(int i, real_t damping, bool learn)
 		CG0.push_back(vector<real_t>(v.t.size() + 1));
 		CG01.push_back(vector<real_t>(v.t.size() + 1));
 		if (learn) {
-			dR.push_back(Message<RealParams>(v.t.size(), zero_r));
-			dM.push_back(Message<RealParams>(v.t.size(), zero_r));
+			dR.push_back(ArrayType<RealParams>(v.t.size(), zero_r));
+			dM.push_back(ArrayType<RealParams>(v.t.size(), zero_r));
 			dC0.push_back(zero_i);
 			dC1.push_back(zero_i);
 		}
@@ -165,8 +176,8 @@ real_t BPGraph::update(int i, real_t damping, bool learn)
 			real_t pi = 1;
 			dpi = zero_i;
 
-			Message<RealParams> & dm = dM[j];
-			Message<RealParams> & dr = dR[j];
+			ArrayType<RealParams> & dm = dM[j];
+			ArrayType<RealParams> & dr = dR[j];
 			for (int sij = min_out[j]; sij < qj - 1; ++sij) {
 				int tij = v.t[sij];
 				real_t const l = prob_i(f.times[tij]-f.times[ti]) * v.lambdas[sij];
